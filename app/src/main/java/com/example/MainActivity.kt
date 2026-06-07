@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -44,6 +45,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -62,8 +64,14 @@ import com.example.service.MediaListenerService
 import com.example.state.MediaStateManager
 import com.example.state.PreferencesManager
 import com.example.ui.theme.MyApplicationTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-data class InstalledApp(val name: String, val packageName: String)
+data class InstalledApp(
+    val name: String,
+    val packageName: String,
+    val icon: androidx.compose.ui.graphics.ImageBitmap? = null
+)
 
 fun getInstalledLauncherApps(context: Context): List<InstalledApp> {
     val pm = context.packageManager
@@ -75,7 +83,19 @@ fun getInstalledLauncherApps(context: Context): List<InstalledApp> {
         resolveInfos.map { resolveInfo ->
             val name = resolveInfo.loadLabel(pm).toString()
             val pkg = resolveInfo.activityInfo.packageName
-            InstalledApp(name, pkg)
+            val iconBitmap = try {
+                val drawable = pm.getApplicationIcon(pkg)
+                val width = drawable.intrinsicWidth.coerceAtLeast(48).coerceAtMost(144)
+                val height = drawable.intrinsicHeight.coerceAtLeast(48).coerceAtMost(144)
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                drawable.draw(canvas)
+                bitmap.asImageBitmap()
+            } catch (e: Exception) {
+                null
+            }
+            InstalledApp(name, pkg, iconBitmap)
         }.distinctBy { it.packageName }
          .sortedBy { it.name.lowercase() }
     } catch (e: Exception) {
@@ -189,8 +209,13 @@ fun RavanaLightDashboard(
     val prefs = remember { PreferencesManager(context) }
     var isListenerToggleEnabled by remember { mutableStateOf(prefs.isListenerEnabled) }
 
-    val installedApps = remember {
-        listOf(InstalledApp("All Player Sessions", "all")) + getInstalledLauncherApps(context)
+    var installedApps by remember { mutableStateOf<List<InstalledApp>>(listOf(InstalledApp("All Player Sessions", "all", null))) }
+
+    LaunchedEffect(context) {
+        withContext(Dispatchers.IO) {
+            val appsList = listOf(InstalledApp("All Player Sessions", "all", null)) + getInstalledLauncherApps(context)
+            installedApps = appsList
+        }
     }
 
     var isRhythmSyncEnabled by remember { mutableStateOf(prefs.isRhythmSyncEnabled) }
@@ -447,21 +472,29 @@ fun AppSelectorDialog(
                             Box(
                                 modifier = Modifier
                                     .size(40.dp)
+                                    .clip(CircleShape)
                                     .background(
                                         if (app.packageName == "all") MaterialTheme.colorScheme.primaryContainer 
-                                        else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                                        CircleShape
+                                        else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = if (app.packageName == "all") "♫" else app.name.take(1).uppercase(),
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        color = if (app.packageName == "all") MaterialTheme.colorScheme.onPrimaryContainer
-                                        else MaterialTheme.colorScheme.onSecondaryContainer,
-                                        fontWeight = FontWeight.Bold
+                                if (app.icon != null) {
+                                    Image(
+                                        bitmap = app.icon,
+                                        contentDescription = "${app.name} icon",
+                                        modifier = Modifier.fillMaxSize()
                                     )
-                                )
+                                } else {
+                                    Text(
+                                        text = if (app.packageName == "all") "♫" else app.name.take(1).uppercase(),
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            color = if (app.packageName == "all") MaterialTheme.colorScheme.onPrimaryContainer
+                                            else MaterialTheme.colorScheme.onSecondaryContainer,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    )
+                                }
                             }
 
                             Column(
@@ -547,6 +580,10 @@ fun PreferencesPersonalizationCard(
                 )
             )
 
+            val selectedAppObj = remember(currentApp, installedApps) {
+                installedApps.find { it.packageName == currentApp }
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -567,26 +604,34 @@ fun PreferencesPersonalizationCard(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
+                        .clip(CircleShape)
                         .background(
-                            MaterialTheme.colorScheme.primaryContainer,
-                            CircleShape
+                            MaterialTheme.colorScheme.primaryContainer
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    val appName = if (currentApp == "all") "All Player Sessions" else (installedApps.find { it.packageName == currentApp }?.name ?: currentApp)
-                    Text(
-                        text = if (currentApp == "all") "♫" else appName.take(1).uppercase(),
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                    if (selectedAppObj?.icon != null) {
+                        Image(
+                            bitmap = selectedAppObj.icon,
+                            contentDescription = "${selectedAppObj.name} icon",
+                            modifier = Modifier.fillMaxSize()
                         )
-                    )
+                    } else {
+                        val appName = if (currentApp == "all") "All Player Sessions" else (selectedAppObj?.name ?: currentApp)
+                        Text(
+                            text = if (currentApp == "all") "♫" else appName.take(1).uppercase(),
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
                 }
 
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
-                    val appName = if (currentApp == "all") "All Player Sessions" else (installedApps.find { it.packageName == currentApp }?.name ?: currentApp)
+                    val appName = if (currentApp == "all") "All Player Sessions" else (selectedAppObj?.name ?: currentApp)
                     Text(
                         text = appName,
                         style = MaterialTheme.typography.bodyMedium.copy(
@@ -855,6 +900,7 @@ fun SoundSuiteSynchronizationCard(
 
                                     Box(
                                         modifier = Modifier
+                                            .graphicsLayer { rotationZ = ringRotation }
                                             .size(54.dp * previewScale)
                                             .shadow(
                                                 elevation = (20.dp * brightness),
@@ -1512,6 +1558,7 @@ fun PlaybackCockpit(
                         Box(
                             modifier = Modifier
                                 .size(160.dp * pulseScale)
+                                .graphicsLayer { rotationZ = rotationAngle }
                                 .shadow(
                                     elevation = (24.dp * rhythmBrightness),
                                     shape = RoundedCornerShape(24.dp),
@@ -1532,15 +1579,6 @@ fun PlaybackCockpit(
                         modifier = Modifier
                             .size(180.dp)
                             .shadow(2.dp, RoundedCornerShape(24.dp))
-                            .border(
-                                width = if (isRhythmEnabled && mediaInfo.isPlaying) 2.dp else 1.dp,
-                                brush = if (isRhythmEnabled && mediaInfo.isPlaying) {
-                                    Brush.sweepGradient(colors = auraColors)
-                                } else {
-                                    androidx.compose.ui.graphics.SolidColor(Color(0xFFCAC4D0))
-                                },
-                                shape = RoundedCornerShape(24.dp)
-                            )
                             .clip(RoundedCornerShape(24.dp))
                             .background(Color(0xFFF3EDF7)),
                         contentAlignment = Alignment.Center
@@ -1575,6 +1613,28 @@ fun PlaybackCockpit(
                                 )
                             }
                         }
+
+                        // Overlay rotating border
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (isRhythmEnabled && mediaInfo.isPlaying) {
+                                        Modifier.graphicsLayer { rotationZ = rotationAngle }
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .border(
+                                    width = if (isRhythmEnabled && mediaInfo.isPlaying) 2.dp else 1.dp,
+                                    brush = if (isRhythmEnabled && mediaInfo.isPlaying) {
+                                        Brush.sweepGradient(colors = auraColors)
+                                    } else {
+                                        androidx.compose.ui.graphics.SolidColor(Color(0xFFCAC4D0))
+                                    },
+                                    shape = RoundedCornerShape(24.dp)
+                                )
+                        )
                     }
                 }
 
