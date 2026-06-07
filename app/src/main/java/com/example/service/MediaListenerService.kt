@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.media.MediaMetadata
+import android.media.AudioManager
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
@@ -37,6 +38,16 @@ class MediaListenerService : NotificationListenerService() {
 
     private var lastLocalIsPlaying: Boolean? = null
     private var lastMediaInfo: MediaStateManager.MediaInfo? = null
+
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val audioPollingRunnable = object : Runnable {
+        override fun run() {
+            if (isTrackingSetup) {
+                updateActiveSession()
+                mainHandler.postDelayed(this, 1000)
+            }
+        }
+    }
 
     private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         updateControllers(controllers ?: emptyList())
@@ -216,6 +227,7 @@ class MediaListenerService : NotificationListenerService() {
             updateControllers(initialControllers ?: emptyList())
 
             isTrackingSetup = true
+            mainHandler.post(audioPollingRunnable)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -239,6 +251,7 @@ class MediaListenerService : NotificationListenerService() {
         }
         registeredControllers.clear()
         isTrackingSetup = false
+        mainHandler.removeCallbacks(audioPollingRunnable)
     }
 
     private fun updateControllers(controllers: List<MediaController>) {
@@ -296,8 +309,32 @@ class MediaListenerService : NotificationListenerService() {
     }
 
     private fun updateActiveSession() {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val isSystemAudioPlaying = try { audioManager.isMusicActive } catch (e: Exception) { false }
+
         val controller = getActiveController()
         if (controller == null) {
+            if (isSystemAudioPlaying) {
+                val activeInfo = MediaStateManager.MediaInfo(
+                    title = "Ambient App Sound Sync",
+                    artist = "Instagram, Clubhouse or Game active",
+                    isPlaying = true,
+                    albumArt = null,
+                    packageName = "com.system.audio"
+                )
+                val last = lastMediaInfo
+                if (last == null || last.title != activeInfo.title || last.isPlaying != activeInfo.isPlaying || last.packageName != activeInfo.packageName) {
+                    lastMediaInfo = activeInfo
+                    MediaStateManager.updateMediaInfo(activeInfo)
+                    updateLocalSessionState(true, "Ambient App Sound Sync", "Instagram, Clubhouse or Game active", null)
+                    val prefs = PreferencesManager(this)
+                    if (prefs.isListenerEnabled) {
+                        showServiceNotification("Ambient App Sound Sync", "Instagram, Clubhouse or Game active", true, null)
+                    }
+                }
+                return
+            }
+
             val emptyInfo = MediaStateManager.MediaInfo(
                 title = "No active media",
                 artist = "Waiting for playback...",
@@ -334,7 +371,11 @@ class MediaListenerService : NotificationListenerService() {
         }
 
         val state = controller.playbackState
-        val isPlaying = state != null && state.state == PlaybackState.STATE_PLAYING
+        var isPlaying = state != null && state.state == PlaybackState.STATE_PLAYING
+
+        if (!isPlaying && isSystemAudioPlaying) {
+            isPlaying = true
+        }
 
         val newInfo = MediaStateManager.MediaInfo(
             title = title,
