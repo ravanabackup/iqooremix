@@ -25,10 +25,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -57,6 +62,26 @@ import com.example.service.MediaListenerService
 import com.example.state.MediaStateManager
 import com.example.state.PreferencesManager
 import com.example.ui.theme.MyApplicationTheme
+
+data class InstalledApp(val name: String, val packageName: String)
+
+fun getInstalledLauncherApps(context: Context): List<InstalledApp> {
+    val pm = context.packageManager
+    return try {
+        val intent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveInfos = pm.queryIntentActivities(intent, 0)
+        resolveInfos.map { resolveInfo ->
+            val name = resolveInfo.loadLabel(pm).toString()
+            val pkg = resolveInfo.activityInfo.packageName
+            InstalledApp(name, pkg)
+        }.distinctBy { it.packageName }
+         .sortedBy { it.name.lowercase() }
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -163,6 +188,10 @@ fun RavanaLightDashboard(
     
     val prefs = remember { PreferencesManager(context) }
     var isListenerToggleEnabled by remember { mutableStateOf(prefs.isListenerEnabled) }
+
+    val installedApps = remember {
+        listOf(InstalledApp("All Player Sessions", "all")) + getInstalledLauncherApps(context)
+    }
 
     var isRhythmSyncEnabled by remember { mutableStateOf(prefs.isRhythmSyncEnabled) }
     var rhythmSyncStyle by remember { mutableStateOf(prefs.rhythmSyncStyle) }
@@ -303,6 +332,7 @@ fun RavanaLightDashboard(
         // Preferences & Personalization Panel
         PreferencesPersonalizationCard(
             currentApp = activeMediaPackage,
+            installedApps = installedApps,
             onAppSelected = {
                 activeMediaPackage = it
                 prefs.activeMediaPackage = it
@@ -346,12 +376,146 @@ fun getSelectedAuraColors(
 }
 
 @Composable
+fun AppSelectorDialog(
+    installedApps: List<InstalledApp>,
+    onDismissRequest: () -> Unit,
+    onAppSelected: (String) -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredApps = remember(searchQuery, installedApps) {
+        installedApps.filter {
+            it.name.contains(searchQuery, ignoreCase = true) ||
+            it.packageName.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    Dialog(onDismissRequest = onDismissRequest) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.8f)
+                .shadow(12.dp, RoundedCornerShape(28.dp)),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            shape = RoundedCornerShape(28.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Select Target App",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search system apps...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Default.Search, contentDescription = "Search")
+                    },
+                    singleLine = true
+                )
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(filteredApps) { app ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    onAppSelected(app.packageName)
+                                    onDismissRequest()
+                                }
+                                .padding(vertical = 12.dp, horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(
+                                        if (app.packageName == "all") MaterialTheme.colorScheme.primaryContainer 
+                                        else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                                        CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (app.packageName == "all") "♫" else app.name.take(1).uppercase(),
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        color = if (app.packageName == "all") MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSecondaryContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                )
+                            }
+
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = app.name,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                )
+                                Text(
+                                    text = app.packageName,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismissRequest) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun PreferencesPersonalizationCard(
     currentApp: String,
+    installedApps: List<InstalledApp>,
     onAppSelected: (String) -> Unit,
     currentTheme: String,
     onThemeSelected: (String) -> Unit
 ) {
+    var showAppDialog by remember { mutableStateOf(false) }
+
+    if (showAppDialog) {
+        AppSelectorDialog(
+            installedApps = installedApps,
+            onDismissRequest = { showAppDialog = false },
+            onAppSelected = onAppSelected
+        )
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -383,63 +547,69 @@ fun PreferencesPersonalizationCard(
                 )
             )
 
-            val players = listOf(
-                Triple("All Player Sessions", "all", "♫"),
-                Triple("Spotify", "com.spotify.music", "🟢"),
-                Triple("YouTube", "com.google.android.youtube", "🔴"),
-                Triple("YouTube Music", "com.google.android.apps.youtube.music", "🎵"),
-                Triple("SoundCloud", "com.soundcloud.android", "🟠")
-            )
-
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        RoundedCornerShape(16.dp)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .clickable { showAppDialog = true }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                players.chunked(2).forEach { rowPlayers ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowPlayers.forEach { (name, pkg, icon) ->
-                            val isSelected = currentApp == pkg
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(44.dp)
-                                    .background(
-                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                        RoundedCornerShape(12.dp)
-                                    )
-                                    .border(
-                                        width = 1.dp,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-                                    .clickable { onAppSelected(pkg) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                ) {
-                                    Text(text = icon, fontSize = 14.sp)
-                                    Text(
-                                        text = name,
-                                        style = MaterialTheme.typography.labelMedium.copy(
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                        if (rowPlayers.size < 2) {
-                            Box(modifier = Modifier.weight(1f))
-                        }
-                    }
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val appName = if (currentApp == "all") "All Player Sessions" else (installedApps.find { it.packageName == currentApp }?.name ?: currentApp)
+                    Text(
+                        text = if (currentApp == "all") "♫" else appName.take(1).uppercase(),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
                 }
+
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    val appName = if (currentApp == "all") "All Player Sessions" else (installedApps.find { it.packageName == currentApp }?.name ?: currentApp)
+                    Text(
+                        text = appName,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                    Text(
+                        text = if (currentApp == "all") "listening to any active system media source" else currentApp,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Change target app",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
 
             Spacer(modifier = Modifier.height(4.dp))

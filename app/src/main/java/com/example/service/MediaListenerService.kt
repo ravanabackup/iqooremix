@@ -35,6 +35,9 @@ class MediaListenerService : NotificationListenerService() {
     private var mediaSession: MediaSession? = null
     private var audioPlaybackManager: AudioPlaybackManager? = null
 
+    private var lastLocalIsPlaying: Boolean? = null
+    private var lastMediaInfo: MediaStateManager.MediaInfo? = null
+
     private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         updateControllers(controllers ?: emptyList())
     }
@@ -85,10 +88,13 @@ class MediaListenerService : NotificationListenerService() {
     }
 
     private fun updateLocalSessionState(isPlaying: Boolean, title: String?, artist: String?, albumArt: Bitmap?) {
-        if (isPlaying && title != null) {
-            audioPlaybackManager?.play()
-        } else {
-            audioPlaybackManager?.pause()
+        if (lastLocalIsPlaying != isPlaying) {
+            lastLocalIsPlaying = isPlaying
+            if (isPlaying && title != null) {
+                audioPlaybackManager?.play()
+            } else {
+                audioPlaybackManager?.pause()
+            }
         }
 
         val session = mediaSession ?: return
@@ -246,9 +252,11 @@ class MediaListenerService : NotificationListenerService() {
         }
         registeredControllers.clear()
 
-        // Register new
+        // Register new (filtering out our own package)
+        val ourPkg = packageName ?: ""
         controllers.forEach { controller ->
             val pkg = controller.packageName ?: "unknown"
+            if (pkg == ourPkg) return@forEach
             registeredControllers[pkg] = controller
             try {
                 controller.registerCallback(controllerCallback)
@@ -290,19 +298,22 @@ class MediaListenerService : NotificationListenerService() {
     private fun updateActiveSession() {
         val controller = getActiveController()
         if (controller == null) {
-            MediaStateManager.updateMediaInfo(
-                MediaStateManager.MediaInfo(
-                    title = "No active media",
-                    artist = "Waiting for playback...",
-                    isPlaying = false,
-                    albumArt = null,
-                    packageName = ""
-                )
+            val emptyInfo = MediaStateManager.MediaInfo(
+                title = "No active media",
+                artist = "Waiting for playback...",
+                isPlaying = false,
+                albumArt = null,
+                packageName = ""
             )
-            updateLocalSessionState(false, null, null, null)
-            val prefs = PreferencesManager(this)
-            if (prefs.isListenerEnabled) {
-                showServiceNotification("No active media", "Waiting for playback...", false, null)
+            val last = lastMediaInfo
+            if (last == null || last.title != emptyInfo.title || last.isPlaying != emptyInfo.isPlaying || last.packageName != emptyInfo.packageName) {
+                lastMediaInfo = emptyInfo
+                MediaStateManager.updateMediaInfo(emptyInfo)
+                updateLocalSessionState(false, null, null, null)
+                val prefs = PreferencesManager(this)
+                if (prefs.isListenerEnabled) {
+                    showServiceNotification("No active media", "Waiting for playback...", false, null)
+                }
             }
             return
         }
@@ -325,22 +336,28 @@ class MediaListenerService : NotificationListenerService() {
         val state = controller.playbackState
         val isPlaying = state != null && state.state == PlaybackState.STATE_PLAYING
 
-        // Sync state flow
-        MediaStateManager.updateMediaInfo(
-            MediaStateManager.MediaInfo(
-                title = title,
-                artist = artist,
-                isPlaying = isPlaying,
-                albumArt = artBitmap,
-                packageName = controller.packageName ?: ""
-            )
+        val newInfo = MediaStateManager.MediaInfo(
+            title = title,
+            artist = artist,
+            isPlaying = isPlaying,
+            albumArt = artBitmap,
+            packageName = controller.packageName ?: ""
         )
 
-        // Update local session state
-        updateLocalSessionState(isPlaying, title, artist, artBitmap)
+        val last = lastMediaInfo
+        val hasChanged = last == null ||
+                last.title != newInfo.title ||
+                last.artist != newInfo.artist ||
+                last.isPlaying != newInfo.isPlaying ||
+                last.packageName != newInfo.packageName ||
+                last.albumArt != newInfo.albumArt
 
-        // Show/Update Notification
-        showServiceNotification(title, artist, isPlaying, artBitmap)
+        if (hasChanged) {
+            lastMediaInfo = newInfo
+            MediaStateManager.updateMediaInfo(newInfo)
+            updateLocalSessionState(isPlaying, title, artist, artBitmap)
+            showServiceNotification(title, artist, isPlaying, artBitmap)
+        }
     }
 
     private fun showServiceNotification(title: String, artist: String, isPlaying: Boolean, albumArt: Bitmap?) {
@@ -688,8 +705,12 @@ class AudioPlaybackManager(private val context: Context) {
         }
     }
 
+    private var isCurrentlyPlaying = false
+
     fun play() {
+        if (isCurrentlyPlaying) return
         try {
+            isCurrentlyPlaying = true
             exoPlayer?.playWhenReady = true
             exoPlayer?.play()
         } catch (e: Exception) {
@@ -698,7 +719,9 @@ class AudioPlaybackManager(private val context: Context) {
     }
 
     fun pause() {
+        if (!isCurrentlyPlaying) return
         try {
+            isCurrentlyPlaying = false
             exoPlayer?.playWhenReady = false
             exoPlayer?.pause()
         } catch (e: Exception) {
