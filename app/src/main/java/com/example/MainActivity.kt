@@ -66,6 +66,145 @@ import com.example.state.PreferencesManager
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+
+class MicVolumeListener(
+    private val context: Context,
+    private val onAmplitudeChanged: (Float) -> Unit,
+    private val onError: (String) -> Unit
+) {
+    private var audioRecord: AudioRecord? = null
+    private var recordJob: Job? = null
+    private val sampleRate = 16000
+    private val channelConfig = AudioFormat.CHANNEL_IN_MONO
+    private val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+
+    fun start(scope: kotlinx.coroutines.CoroutineScope) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            onError("Microphone permission not granted")
+            return
+        }
+
+        stop()
+
+        recordJob = scope.launch(Dispatchers.IO) {
+            val minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+            if (minBufSize == AudioRecord.ERROR || minBufSize == AudioRecord.ERROR_BAD_VALUE) {
+                withContext(Dispatchers.Main) {
+                    onError("Failed to get audio buffer size")
+                }
+                return@launch
+            }
+
+            val bufferSize = (minBufSize * 2).coerceAtLeast(1024)
+            try {
+                audioRecord = AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    sampleRate,
+                    channelConfig,
+                    audioFormat,
+                    bufferSize
+                )
+            } catch (e: SecurityException) {
+                withContext(Dispatchers.Main) {
+                    onError("Security exception: microphone permission required")
+                }
+                return@launch
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onError("Failed to initialize audio recorder: ${e.localizedMessage}")
+                }
+                return@launch
+            }
+
+            val recorder = audioRecord
+            if (recorder == null || recorder.state != AudioRecord.STATE_INITIALIZED) {
+                withContext(Dispatchers.Main) {
+                    onError("AudioRecord initialization failed")
+                }
+                recorder?.release()
+                audioRecord = null
+                return@launch
+            }
+
+            try {
+                recorder.startRecording()
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onError("Failed to start recording: ${e.localizedMessage}")
+                }
+                recorder.release()
+                audioRecord = null
+                return@launch
+            }
+
+            val buffer = ShortArray(bufferSize)
+            var lastUpdate = 0L
+
+            while (isActive && audioRecord != null) {
+                val readSize = recorder.read(buffer, 0, buffer.size)
+                if (readSize > 0) {
+                    // Compute absolute maximum or RMS
+                    var sum = 0.0
+                    for (i in 0 until readSize) {
+                        sum += buffer[i] * buffer[i]
+                    }
+                    val rms = Math.sqrt(sum / readSize)
+                    
+                    // Normalize RMS to a fraction between 0.0 and 1.0
+                    val maxPossibleRms = 8000.0
+                    val normalized = (rms / maxPossibleRms).coerceIn(0.0, 1.0).toFloat()
+
+                    val now = System.currentTimeMillis()
+                    if (now - lastUpdate > 33) { // limit updates to 30fps
+                        lastUpdate = now
+                        withContext(Dispatchers.Main) {
+                            onAmplitudeChanged(normalized)
+                        }
+                    }
+                } else if (readSize < 0) {
+                    withContext(Dispatchers.Main) {
+                        onError("Error reading audio data: $readSize")
+                    }
+                    break
+                }
+                delay(10)
+            }
+
+            try {
+                if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                    recorder.stop()
+                }
+                recorder.release()
+            } catch (e: Exception) {
+                // Ignore
+            }
+            audioRecord = null
+        }
+    }
+
+    fun stop() {
+        recordJob?.cancel()
+        recordJob = null
+        try {
+            audioRecord?.let {
+                if (it.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                    it.stop()
+                }
+                it.release()
+            }
+        } catch (e: Exception) {
+            // Ignore
+        }
+        audioRecord = null
+    }
+}
 
 data class InstalledApp(
     val name: String,
@@ -155,6 +294,9 @@ class MainActivity : ComponentActivity() {
                                     isAccessGranted = isAccessGranted,
                                     onRequestAccess = { openNotificationAccessSettings() }
                                 )
+                            }
+                            "Mic" -> {
+                                MicDashboard()
                             }
                             "Stats" -> {
                                 StatsDashboard()
@@ -1967,6 +2109,64 @@ fun BottomNavigationBar(
             )
 
             BottomTabButton(
+                label = "Mic Sync",
+                isSelected = selectedTab == "Mic",
+                iconContent = {
+                    Box(
+                        modifier = Modifier
+                            .width(64.dp)
+                            .height(32.dp)
+                            .background(
+                                if (selectedTab == "Mic") selectedIndicatorColor else unselectedIndicatorColor,
+                                RoundedCornerShape(16.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.foundation.Canvas(modifier = Modifier.size(20.dp)) {
+                            val activeColor = if (selectedTab == "Mic") selectedIconColor else unselectedIconColor
+                            
+                            // Draw microphone cup (rounded capsule)
+                            drawRoundRect(
+                                color = activeColor,
+                                topLeft = Offset(size.width * 0.35f, size.height * 0.15f),
+                                size = androidx.compose.ui.geometry.Size(size.width * 0.3f, size.height * 0.45f),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.15f, size.width * 0.15f),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+                            )
+                            
+                            // Draw the stand curve
+                            drawArc(
+                                color = activeColor,
+                                startAngle = 0f,
+                                sweepAngle = 180f,
+                                useCenter = false,
+                                topLeft = Offset(size.width * 0.2f, size.height * 0.25f),
+                                size = androidx.compose.ui.geometry.Size(size.width * 0.6f, size.height * 0.45f),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+                            )
+                            
+                            // Draw vertical line from arc to base
+                            drawLine(
+                                color = activeColor,
+                                start = Offset(size.width * 0.5f, size.height * 0.7f),
+                                end = Offset(size.width * 0.5f, size.height * 0.85f),
+                                strokeWidth = 2.dp.toPx()
+                            )
+                            
+                            // Draw base line
+                            drawLine(
+                                color = activeColor,
+                                start = Offset(size.width * 0.3f, size.height * 0.85f),
+                                end = Offset(size.width * 0.7f, size.height * 0.85f),
+                                strokeWidth = 2.dp.toPx()
+                            )
+                        }
+                    }
+                },
+                onClick = { onTabSelected("Mic") }
+            )
+
+            BottomTabButton(
                 label = "Stats",
                 isSelected = selectedTab == "Stats",
                 iconContent = {
@@ -2261,6 +2461,447 @@ fun LogsDashboard(modifier: Modifier = Modifier) {
                         )
                     }
                     HorizontalDivider(color = Color(0xFFCAC4D0).copy(alpha = 0.5f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MicDashboard(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    
+    // Check permission state
+    var hasMicPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasMicPermission = isGranted
+    }
+
+    var isRecording by remember { mutableStateOf(false) }
+    var rawAmplitude by remember { mutableFloatStateOf(0.0f) }
+    var micError by remember { mutableStateOf<String?>(null) }
+
+    var sensitivity by remember { mutableFloatStateOf(2.0f) }
+    var brightness by remember { mutableFloatStateOf(0.8f) }
+    var selectedColorMode by remember { mutableStateOf("cyber_neon") }
+
+    val amplitude = (rawAmplitude * sensitivity).coerceIn(0.0f, 1.0f)
+
+    val coroutineScope = rememberCoroutineScope()
+    DisposableEffect(isRecording, hasMicPermission) {
+        var micListener: MicVolumeListener? = null
+        if (isRecording && hasMicPermission) {
+            micError = null
+            micListener = MicVolumeListener(
+                context = context,
+                onAmplitudeChanged = { newAmp ->
+                    rawAmplitude = newAmp
+                },
+                onError = { err ->
+                    micError = err
+                    isRecording = false
+                }
+            )
+            micListener.start(coroutineScope)
+        } else {
+            rawAmplitude = 0.0f
+        }
+        onDispose {
+            micListener?.stop()
+        }
+    }
+
+    // Spring scale logic for dynamic halo bloom
+    val animatedScale by animateFloatAsState(
+        targetValue = 1.0f + amplitude * 1.1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "pulsing_scale"
+    )
+
+    // Continuous rotation logic
+    val infiniteTransition = rememberInfiniteTransition(label = "halo_rotation")
+    val rotationAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(4000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotating_glow"
+    )
+    val finalRotation = if (isRecording) rotationAngle else 0f
+
+    val auraColors = getSelectedAuraColors(selectedColorMode, "", "")
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        // Dashboard Title Header
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Microphone Beat Sync",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1D1B20)
+                )
+            )
+            Text(
+                text = "Ambient decibel sound sync suite",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = Color(0xFF49454F)
+                )
+            )
+        }
+
+        // Handle permission state card
+        if (!hasMicPermission) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, Color(0xFFF4B400).copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+                    .testTag("mic_permission_card"),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF9E6)),
+                shape = RoundedCornerShape(24.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "🎤 Microphone Access Required",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFB06000)
+                        )
+                    )
+                    Text(
+                        text = "To synchronize LEDs and light rings with real-time room audio/mic feed, please grant microphone permissions below.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF6D4C00)
+                    )
+                    Button(
+                        onClick = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4B400)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grant Microphone Access", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Displays the main halo light centered box
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Color(0xFFCAC4D0), RoundedCornerShape(28.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+            shape = RoundedCornerShape(28.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                Text(
+                    text = "Sync light halo",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1D1B20)
+                    )
+                )
+
+                // Visualizer light container
+                Box(
+                    modifier = Modifier.size(220.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isRecording) {
+                        // Ambient bloom background glow matching sensitivity/amplitude
+                        Box(
+                            modifier = Modifier
+                                .size(140.dp)
+                                .graphicsLayer {
+                                    scaleX = animatedScale
+                                    scaleY = animatedScale
+                                    rotationZ = finalRotation
+                                }
+                                .shadow(
+                                    elevation = (28.dp * brightness * (1.0f + amplitude)),
+                                    shape = RoundedCornerShape(24.dp),
+                                    ambientColor = auraColors[0],
+                                    spotColor = auraColors[1],
+                                    clip = false
+                                )
+                        )
+                    }
+
+                    // Foreground sphere frame
+                    Box(
+                        modifier = Modifier
+                            .size(150.dp)
+                            .shadow(2.dp, RoundedCornerShape(100.dp))
+                            .clip(RoundedCornerShape(100.dp))
+                            .background(Color(0xFFF3EDF7)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Micro icon / emoji representation
+                        Text(
+                            text = if (isRecording) "🎙" else "💤",
+                            fontSize = 62.sp
+                        )
+                    }
+
+                    // Rotating Neon Border ring
+                    Box(
+                        modifier = Modifier
+                            .size(170.dp)
+                            .then(
+                                if (isRecording) {
+                                    Modifier.graphicsLayer { rotationZ = finalRotation }
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .border(
+                                width = if (isRecording) 3.dp else 1.5.dp,
+                                brush = if (isRecording) {
+                                    Brush.sweepGradient(colors = auraColors)
+                                } else {
+                                    androidx.compose.ui.graphics.SolidColor(Color(0xFFCAC4D0))
+                                },
+                                shape = RoundedCornerShape(100.dp)
+                            )
+                    )
+                }
+
+                // Error Banner Display
+                micError?.let { err ->
+                    Text(
+                        text = "Error: $err",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                }
+
+                // Start / Pause Controls Cockpit (Play / Pause Buttons)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { isRecording = !isRecording },
+                        enabled = hasMicPermission,
+                        modifier = Modifier
+                            .size(64.dp)
+                            .shadow(4.dp, RoundedCornerShape(20.dp))
+                            .background(
+                                if (isRecording) Color(0xFFBA1A1A) else Color(0xFF6750A4),
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                    ) {
+                        if (isRecording) {
+                            androidx.compose.foundation.Canvas(modifier = Modifier.size(24.dp)) {
+                                val barWidth = 6.dp.toPx()
+                                val barHeight = 16.dp.toPx()
+                                val gap = 5.dp.toPx()
+                                drawRect(
+                                    color = Color.White,
+                                    topLeft = Offset(size.width / 2f - barWidth - gap / 2f, size.height / 2f - barHeight / 2f),
+                                    size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+                                )
+                                drawRect(
+                                    color = Color.White,
+                                    topLeft = Offset(size.width / 2f + gap / 2f, size.height / 2f - barHeight / 2f),
+                                    size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Start recording",
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Status descriptive Label
+                Text(
+                    text = if (isRecording) "🔴 LISTENING SYSTEM SOUNDS" else "⚪ INACTIVE",
+                    color = if (isRecording) Color(0xFFBA1A1A) else Color(0xFF49454F),
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Microphone realtime custom bar visualizer row
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    val barCount = 10
+                    (0 until barCount).forEach { index ->
+                        val factor = remember(index) { (0.4f + Math.random().toFloat() * 0.6f) }
+                        val targetHeight = if (isRecording) (10.dp + 38.dp * (amplitude * factor)) else 6.dp
+                        val animatedHeight by animateDpAsState(
+                            targetValue = targetHeight,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                            label = "bar_height"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .width(6.dp)
+                                .height(animatedHeight)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = if (isRecording) {
+                                            auraColors
+                                        } else {
+                                            listOf(Color(0xFFCAC4D0), Color(0xFFEADDFF))
+                                        }
+                                    ),
+                                    RoundedCornerShape(3.dp)
+                                )
+                        )
+                    }
+                }
+            }
+        }
+
+        // Adjustable control sliders panel card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Color(0xFFCAC4D0), RoundedCornerShape(24.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Light Parameters Control",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1D1B20)
+                    )
+                )
+
+                // Decibel sensitivity slider
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Signal Sensitivity", style = MaterialTheme.typography.bodySmall, color = Color(0xFF49454F))
+                        Text("${"%.1f".format(sensitivity)}x", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
+                    }
+                    Slider(
+                        value = sensitivity,
+                        onValueChange = { sensitivity = it },
+                        valueRange = 0.5f..4.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFF6750A4),
+                            activeTrackColor = Color(0xFF6750A4)
+                        )
+                    )
+                }
+
+                // Bloom brightness slider
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Light Ring Glow", style = MaterialTheme.typography.bodySmall, color = Color(0xFF49454F))
+                        Text("${(brightness * 100).toInt()}%", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
+                    }
+                    Slider(
+                        value = brightness,
+                        onValueChange = { brightness = it },
+                        valueRange = 0.1f..1.5f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFF6750A4),
+                            activeTrackColor = Color(0xFF6750A4)
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = Color(0xFFCAC4D0).copy(alpha = 0.4f))
+
+                // Microphone beat color theme switcher
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Glow Theme Palette",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = Color(0xFF1D1B20)
+                    )
+                    
+                    val colorModes = listOf(
+                        Pair("cyber_neon", "Cyber Neon"),
+                        Pair("space_violet", "Cosmic Violet"),
+                        Pair("magma_flame", "Magma Flame")
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        colorModes.forEach { (mode, label) ->
+                            val isSelected = selectedColorMode == mode
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color(0xFFF3EDF7),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .border(
+                                        width = if (isSelected) 1.5.dp else 0.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable { selectedColorMode = mode },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else Color(0xFF49454F)
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
