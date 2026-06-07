@@ -2520,7 +2520,7 @@ fun MicDashboard(modifier: Modifier = Modifier) {
 
     // Spring scale logic for dynamic halo bloom
     val animatedScale by animateFloatAsState(
-        targetValue = 1.0f + amplitude * 1.1f,
+        targetValue = 1.12f + amplitude * 1.2f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioLowBouncy,
             stiffness = Spring.StiffnessLow
@@ -2647,11 +2647,15 @@ fun MicDashboard(modifier: Modifier = Modifier) {
                                     rotationZ = finalRotation
                                 }
                                 .shadow(
-                                    elevation = (28.dp * brightness * (1.0f + amplitude)),
-                                    shape = RoundedCornerShape(24.dp),
+                                    elevation = (32.dp * brightness * (1.0f + amplitude)),
+                                    shape = RoundedCornerShape(100.dp),
                                     ambientColor = auraColors[0],
                                     spotColor = auraColors[1],
                                     clip = false
+                                )
+                                .background(
+                                    brush = Brush.sweepGradient(colors = auraColors),
+                                    shape = RoundedCornerShape(100.dp)
                                 )
                         )
                     }
