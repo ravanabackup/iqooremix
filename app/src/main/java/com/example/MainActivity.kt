@@ -66,15 +66,36 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme(dynamicColor = false) {
+            val context = LocalContext.current
+            val prefs = remember { PreferencesManager(context) }
+            var appThemeMode by remember { mutableStateOf(prefs.appThemeMode) }
+
+            DisposableEffect(prefs) {
+                val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                    if (key == "app_theme_mode") {
+                        appThemeMode = prefs.appThemeMode
+                    }
+                }
+                val sharedPrefs = context.getSharedPreferences("ravana_light_prefs", Context.MODE_PRIVATE)
+                sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+                onDispose {
+                    sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+                }
+            }
+
+            val isDark = when (appThemeMode) {
+                "dark" -> true
+                "light" -> false
+                else -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
+
+            MyApplicationTheme(darkTheme = isDark, dynamicColor = false) {
                 var selectedTab by remember { mutableStateOf("Home") }
                 val isAccessGranted by isNotificationAccessGranted
                 
                 Scaffold(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFFFEF7FF)),
-                    containerColor = Color(0xFFFEF7FF),
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = MaterialTheme.colorScheme.background,
                     bottomBar = {
                         BottomNavigationBar(
                             selectedTab = selectedTab,
@@ -148,6 +169,8 @@ fun RavanaLightDashboard(
     var rhythmColorMode by remember { mutableStateOf(prefs.rhythmColorMode) }
     var rhythmSensitivity by remember { mutableStateOf(prefs.rhythmSensitivity) }
     var rhythmBrightness by remember { mutableStateOf(prefs.rhythmBrightness) }
+    var activeMediaPackage by remember { mutableStateOf(prefs.activeMediaPackage) }
+    var appThemeMode by remember { mutableStateOf(prefs.appThemeMode) }
 
     LaunchedEffect(Unit) {
         if (prefs.isListenerEnabled) {
@@ -157,8 +180,10 @@ fun RavanaLightDashboard(
 
     DisposableEffect(prefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "listener_enabled") {
-                isListenerToggleEnabled = prefs.isListenerEnabled
+            when (key) {
+                "listener_enabled" -> isListenerToggleEnabled = prefs.isListenerEnabled
+                "active_media_package" -> activeMediaPackage = prefs.activeMediaPackage
+                "app_theme_mode" -> appThemeMode = prefs.appThemeMode
             }
         }
         val sharedPrefs = context.getSharedPreferences("ravana_light_prefs", Context.MODE_PRIVATE)
@@ -227,7 +252,8 @@ fun RavanaLightDashboard(
         StatusInfoSection(isAccessGranted = isAccessGranted)
 
         // System Player Center Cockpit (#FFFFFF layout with outline #CAC4D0)
-        val activePlaying = isAccessGranted && isListenerToggleEnabled && mediaInfo.packageName.isNotEmpty()
+        val activePlaying = isAccessGranted && isListenerToggleEnabled && mediaInfo.packageName.isNotEmpty() &&
+                (activeMediaPackage == "all" || mediaInfo.packageName == activeMediaPackage)
         
         PlaybackCockpit(
             mediaInfo = mediaInfo,
@@ -242,7 +268,7 @@ fun RavanaLightDashboard(
             onNextClick = { MediaListenerService.skipToNextActiveSession() }
         )
 
-        // Dedicated Sound Suite Sync (音律神光 / Music Rhythm) Panel
+        // Dedicated Sound Suite Sync (Music Rhythm) Panel
         SoundSuiteSynchronizationCard(
             isEnabled = isRhythmSyncEnabled,
             onEnabledChanged = {
@@ -272,6 +298,20 @@ fun RavanaLightDashboard(
             isPlaying = activePlaying && mediaInfo.isPlaying,
             title = mediaInfo.title,
             artist = mediaInfo.artist
+        )
+
+        // Preferences & Personalization Panel
+        PreferencesPersonalizationCard(
+            currentApp = activeMediaPackage,
+            onAppSelected = {
+                activeMediaPackage = it
+                prefs.activeMediaPackage = it
+            },
+            currentTheme = appThemeMode,
+            onThemeSelected = {
+                appThemeMode = it
+                prefs.appThemeMode = it
+            }
         )
         
         // Aesthetic Brand Footer
@@ -306,6 +346,154 @@ fun getSelectedAuraColors(
 }
 
 @Composable
+fun PreferencesPersonalizationCard(
+    currentApp: String,
+    onAppSelected: (String) -> Unit,
+    currentTheme: String,
+    onThemeSelected: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(1.dp, RoundedCornerShape(28.dp))
+            .testTag("preferences_personalization_card"),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(28.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "System Source & Theme Binding",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            )
+
+            Text(
+                text = "BIND TO TARGET MUSIC PLAYER",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            )
+
+            val players = listOf(
+                Triple("All Player Sessions", "all", "♫"),
+                Triple("Spotify", "com.spotify.music", "🟢"),
+                Triple("YouTube", "com.google.android.youtube", "🔴"),
+                Triple("YouTube Music", "com.google.android.apps.youtube.music", "🎵"),
+                Triple("SoundCloud", "com.soundcloud.android", "🟠")
+            )
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                players.chunked(2).forEach { rowPlayers ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowPlayers.forEach { (name, pkg, icon) ->
+                            val isSelected = currentApp == pkg
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { onAppSelected(pkg) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) {
+                                    Text(text = icon, fontSize = 14.sp)
+                                    Text(
+                                        text = name,
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        if (rowPlayers.size < 2) {
+                            Box(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            Text(
+                text = "APPLICATION MODE THEME",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    "light" to "Light Mode",
+                    "dark" to "Dark Mode",
+                    "system" to "Follow System"
+                ).forEach { (mode, label) ->
+                    val isSelected = currentTheme == mode
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { onThemeSelected(mode) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun SoundSuiteSynchronizationCard(
     isEnabled: Boolean,
     onEnabledChanged: (Boolean) -> Unit,
@@ -327,16 +515,15 @@ fun SoundSuiteSynchronizationCard(
             .shadow(1.dp, RoundedCornerShape(28.dp))
             .testTag("sound_suite_card"),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFFFFFFF)
+            containerColor = MaterialTheme.colorScheme.surface
         ),
         shape = RoundedCornerShape(28.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCAC4D0))
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Header with custom light bulb / rhythm graphics
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -353,22 +540,22 @@ fun SoundSuiteSynchronizationCard(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "Sound Suite Sync (音律神光)",
+                                text = "Sound Suite Sync",
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1D1B20)
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             )
                             Box(
                                 modifier = Modifier
-                                    .background(Color(0xFFEADDFF), RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
                                     text = "LIVE",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF21005D),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                                         fontSize = 9.sp
                                     )
                                 )
@@ -379,7 +566,7 @@ fun SoundSuiteSynchronizationCard(
                     Text(
                         text = "Dynamic audio-synchronized light show",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF49454F)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -387,21 +574,20 @@ fun SoundSuiteSynchronizationCard(
                     checked = isEnabled,
                     onCheckedChange = onEnabledChanged,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Color(0xFF6750A4),
-                        uncheckedThumbColor = Color(0xFF49454F),
-                        uncheckedTrackColor = Color(0xFFF3EDF7)
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 )
             }
 
             if (isEnabled) {
-                // Interactive Simulated physical device mockup displays Monster Halo/Dynamic Light
                 Text(
-                    text = "AURA PREVIEW (酷玩光效)",
+                    text = "AURA PREVIEW",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF49454F)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 )
 
@@ -458,7 +644,6 @@ fun SoundSuiteSynchronizationCard(
                     remember { mutableStateOf(0.9f) }
                 }
 
-                // Phone Backplate Mockup Component
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -467,7 +652,6 @@ fun SoundSuiteSynchronizationCard(
                         .background(Color(0xFF111012)),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Mobile outline frame representation
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -480,7 +664,6 @@ fun SoundSuiteSynchronizationCard(
                             modifier = Modifier.padding(top = 18.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            // Circular Lens Matrix with Neon Halo!
                             Box(
                                 modifier = Modifier
                                     .size(68.dp)
@@ -489,7 +672,6 @@ fun SoundSuiteSynchronizationCard(
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (isPlaying) {
-                                    // Simulated Ambient Ray Glow
                                     val brushValue = if (syncStyle == "aurora_wave") {
                                         Brush.sweepGradient(
                                             colors = auraColors,
@@ -518,7 +700,6 @@ fun SoundSuiteSynchronizationCard(
                                             )
                                     )
                                 } else {
-                                    // Saturated low-key inactive outline representation
                                     Box(
                                         modifier = Modifier
                                             .size(54.dp)
@@ -526,7 +707,6 @@ fun SoundSuiteSynchronizationCard(
                                     )
                                 }
 
-                                // Dark reflective camera glass
                                 Box(
                                     modifier = Modifier
                                         .size(36.dp)
@@ -573,14 +753,13 @@ fun SoundSuiteSynchronizationCard(
                     }
                 }
 
-                HorizontalDivider(color = Color(0xFFCAC4D0).copy(alpha = 0.5f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                // Rhythm Synchronization style triggers
                 Text(
-                    text = "SYNC STYLE (酷玩灯效模式)",
+                    text = "SYNC STYLE",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF49454F)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 )
 
@@ -589,9 +768,9 @@ fun SoundSuiteSynchronizationCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(
-                        "neon_glow" to "律动呼吸",
-                        "aurora_wave" to "极光频谱",
-                        "pulse" to "幽光瞬闪"
+                        "neon_glow" to "Breathing",
+                        "aurora_wave" to "Aurora Wave",
+                        "pulse" to "Flash Pulse"
                     ).forEach { styleOpt ->
                         val isSelected = syncStyle == styleOpt.first
                         Box(
@@ -599,12 +778,12 @@ fun SoundSuiteSynchronizationCard(
                                 .weight(1f)
                                 .height(38.dp)
                                 .background(
-                                    if (isSelected) Color(0xFFEADDFF) else Color(0xFFF3EDF7),
+                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                     RoundedCornerShape(12.dp)
                                 )
                                 .border(
                                     width = 1.dp,
-                                    color = if (isSelected) Color(0xFF6750A4) else Color.Transparent,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 .clickable { onStyleChanged(styleOpt.first) },
@@ -614,7 +793,7 @@ fun SoundSuiteSynchronizationCard(
                                 text = styleOpt.second,
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color(0xFF21005D) else Color(0xFF49454F)
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             )
                         }
@@ -623,12 +802,11 @@ fun SoundSuiteSynchronizationCard(
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // Custom aura visualizers color options
                 Text(
-                    text = "AURA COLORS (炫彩神光方案)",
+                    text = "AURA COLORS",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF49454F)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 )
 
@@ -637,10 +815,10 @@ fun SoundSuiteSynchronizationCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(
-                        "album_art" to "流光自适应",
-                        "cyber_neon" to "冰晶圣歌",
-                        "space_violet" to "紫夜幽兰",
-                        "magma_flame" to "熔岩魔火"
+                        "album_art" to "Adaptive",
+                        "cyber_neon" to "Cyber Neon",
+                        "space_violet" to "Space Violet",
+                        "magma_flame" to "Magma Flame"
                     ).forEach { colorOpt ->
                         val isSelected = colorMode == colorOpt.first
                         Box(
@@ -648,12 +826,12 @@ fun SoundSuiteSynchronizationCard(
                                 .weight(1f)
                                 .height(38.dp)
                                 .background(
-                                    if (isSelected) Color(0xFFEADDFF) else Color(0xFFF3EDF7),
+                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                     RoundedCornerShape(12.dp)
                                 )
                                 .border(
                                     width = 1.dp,
-                                    color = if (isSelected) Color(0xFF6750A4) else Color.Transparent,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 .clickable { onColorModeChanged(colorOpt.first) },
@@ -663,16 +841,15 @@ fun SoundSuiteSynchronizationCard(
                                 text = colorOpt.second,
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color(0xFF21005D) else Color(0xFF49454F)
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             )
                         }
                     }
                 }
 
-                HorizontalDivider(color = Color(0xFFCAC4D0).copy(alpha = 0.5f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                // Rhythm Reaction Sensitivity
                 Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -680,17 +857,17 @@ fun SoundSuiteSynchronizationCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Frequency Reaction Sensitivity (响应灵敏度)",
+                            text = "Frequency Reaction Sensitivity",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF49454F)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         )
                         Text(
                             text = "${(sensitivity * 100).toInt()}%",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF6750A4)
+                                color = MaterialTheme.colorScheme.primary
                             )
                         )
                     }
@@ -699,14 +876,13 @@ fun SoundSuiteSynchronizationCard(
                         onValueChange = onSensitivityChanged,
                         valueRange = 0.5f..2.5f,
                         colors = SliderDefaults.colors(
-                            activeTrackColor = Color(0xFF6750A4),
-                            inactiveTrackColor = Color(0xFFEADDFF),
-                            thumbColor = Color(0xFF6750A4)
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.primaryContainer,
+                            thumbColor = MaterialTheme.colorScheme.primary
                         )
                     )
                 }
 
-                // Rhythm Brightness Intensity
                 Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -714,17 +890,17 @@ fun SoundSuiteSynchronizationCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Ambient Glow Brightness (神光亮度)",
+                            text = "Ambient Glow Brightness",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF49454F)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         )
                         Text(
                             text = "${(brightness * 100).toInt()}%",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF6750A4)
+                                color = MaterialTheme.colorScheme.primary
                             )
                         )
                     }
@@ -733,9 +909,9 @@ fun SoundSuiteSynchronizationCard(
                         onValueChange = onBrightnessChanged,
                         valueRange = 0.1f..1.0f,
                         colors = SliderDefaults.colors(
-                            activeTrackColor = Color(0xFF6750A4),
-                            inactiveTrackColor = Color(0xFFEADDFF),
-                            thumbColor = Color(0xFF6750A4)
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.primaryContainer,
+                            thumbColor = MaterialTheme.colorScheme.primary
                         )
                     )
                 }
@@ -744,14 +920,14 @@ fun SoundSuiteSynchronizationCard(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFF3EDF7), RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "Sound Suite Sync is disabled. Enable to activate real-time LED and screen-edge halo visualizations under music beat.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF49454F),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -1519,8 +1695,8 @@ fun BottomNavigationBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(80.dp),
-        color = Color(0xFFF3EDF7),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFCAC4D0))
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
@@ -1530,6 +1706,11 @@ fun BottomNavigationBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceAround
         ) {
+            val selectedIndicatorColor = MaterialTheme.colorScheme.secondaryContainer
+            val unselectedIndicatorColor = Color.Transparent
+            val selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer
+            val unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+
             BottomTabButton(
                 label = "Home",
                 isSelected = selectedTab == "Home",
@@ -1539,7 +1720,7 @@ fun BottomNavigationBar(
                             .width(64.dp)
                             .height(32.dp)
                             .background(
-                                if (selectedTab == "Home") Color(0xFFEADDFF) else Color.Transparent,
+                                if (selectedTab == "Home") selectedIndicatorColor else unselectedIndicatorColor,
                                 RoundedCornerShape(16.dp)
                             ),
                         contentAlignment = Alignment.Center
@@ -1547,7 +1728,7 @@ fun BottomNavigationBar(
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = "Home",
-                            tint = if (selectedTab == "Home") Color(0xFF21005D) else Color(0xFF49454F),
+                            tint = if (selectedTab == "Home") selectedIconColor else unselectedIconColor,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -1564,26 +1745,27 @@ fun BottomNavigationBar(
                             .width(64.dp)
                             .height(32.dp)
                             .background(
-                                if (selectedTab == "Stats") Color(0xFFEADDFF) else Color.Transparent,
+                                if (selectedTab == "Stats") selectedIndicatorColor else unselectedIndicatorColor,
                                 RoundedCornerShape(16.dp)
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         androidx.compose.foundation.Canvas(modifier = Modifier.size(20.dp)) {
+                            val activeColor = if (selectedTab == "Stats") selectedIconColor else unselectedIconColor
                             drawLine(
-                                color = if (selectedTab == "Stats") Color(0xFF21005D) else Color(0xFF49454F),
+                                color = activeColor,
                                 start = Offset(2.dp.toPx(), size.height - 2.dp.toPx()),
                                 end = Offset(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
                                 strokeWidth = 2.dp.toPx()
                             )
                             drawLine(
-                                color = if (selectedTab == "Stats") Color(0xFF21005D) else Color(0xFF49454F),
+                                color = activeColor,
                                 start = Offset(4.dp.toPx(), size.height - 4.dp.toPx()),
                                 end = Offset(4.dp.toPx(), 4.dp.toPx()),
                                 strokeWidth = 2.dp.toPx()
                             )
                             drawLine(
-                                color = if (selectedTab == "Stats") Color(0xFF21005D) else Color(0xFF49454F),
+                                color = activeColor,
                                 start = Offset(8.dp.toPx(), size.height - 4.dp.toPx()),
                                 end = Offset(8.dp.toPx(), size.height - 14.dp.toPx()),
                                 strokeWidth = 2.dp.toPx()
@@ -1603,27 +1785,28 @@ fun BottomNavigationBar(
                             .width(64.dp)
                             .height(32.dp)
                             .background(
-                                if (selectedTab == "Logs") Color(0xFFEADDFF) else Color.Transparent,
+                                if (selectedTab == "Logs") selectedIndicatorColor else unselectedIndicatorColor,
                                 RoundedCornerShape(16.dp)
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         androidx.compose.foundation.Canvas(modifier = Modifier.size(18.dp)) {
+                            val activeColor = if (selectedTab == "Logs") selectedIconColor else unselectedIconColor
                             val spacing = 5.dp.toPx()
                             drawLine(
-                                color = if (selectedTab == "Logs") Color(0xFF21005D) else Color(0xFF49454F),
+                                color = activeColor,
                                 start = Offset(0f, 2.dp.toPx()),
                                 end = Offset(size.width, 2.dp.toPx()),
                                 strokeWidth = 2.dp.toPx()
                             )
                             drawLine(
-                                color = if (selectedTab == "Logs") Color(0xFF21005D) else Color(0xFF49454F),
+                                color = activeColor,
                                 start = Offset(0f, 2.dp.toPx() + spacing),
                                 end = Offset(size.width * 0.7f, 2.dp.toPx() + spacing),
                                 strokeWidth = 2.dp.toPx()
                             )
                             drawLine(
-                                color = if (selectedTab == "Logs") Color(0xFF21005D) else Color(0xFF49454F),
+                                color = activeColor,
                                 start = Offset(0f, 2.dp.toPx() + spacing * 2),
                                 end = Offset(size.width * 0.9f, 2.dp.toPx() + spacing * 2),
                                 strokeWidth = 2.dp.toPx()

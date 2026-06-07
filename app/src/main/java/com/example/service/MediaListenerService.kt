@@ -261,14 +261,30 @@ class MediaListenerService : NotificationListenerService() {
     }
 
     private fun getActiveController(): MediaController? {
-        // Prefer the one that is actively playing system-wide
-        val playing = registeredControllers.values.find {
-            it.playbackState?.state == PlaybackState.STATE_PLAYING
-        }
-        if (playing != null) return playing
+        val prefs = PreferencesManager(this)
+        val targetPkg = prefs.activeMediaPackage
+        val ourPkg = packageName ?: ""
 
-        // Or fallback to first controller
-        return registeredControllers.values.firstOrNull()
+        if (targetPkg == "all" || targetPkg.isBlank()) {
+            val playing = registeredControllers.values.find {
+                it.packageName != ourPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING
+            }
+            if (playing != null) return playing
+
+            return registeredControllers.values.firstOrNull { it.packageName != ourPkg }
+        } else {
+            val playingTarget = registeredControllers.values.find {
+                it.packageName == targetPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING
+            }
+            if (playingTarget != null) return playingTarget
+
+            val targetController = registeredControllers.values.find {
+                it.packageName == targetPkg
+            }
+            if (targetController != null) return targetController
+
+            return null
+        }
     }
 
     private fun updateActiveSession() {

@@ -40,4 +40,16 @@ class PreferencesManager(context: Context) {
         set(value) {
             prefs.edit().putFloat("rhythm_brightness", value).apply()
         }
+
+    var activeMediaPackage: String
+        get() = prefs.getString("active_media_package", "all") ?: "all"
+        set(value) {
+            prefs.edit().putString("active_media_package", value).apply()
+        }
+
+    var appThemeMode: String
+        get() = prefs.getString("app_theme_mode", "system") ?: "system"
+        set(value) {
+            prefs.edit().putString("app_theme_mode", value).apply()
+        }
 }
