@@ -2614,7 +2614,7 @@ fun MicDashboard(modifier: Modifier = Modifier) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, Color(0xFFCAC4D0), RoundedCornerShape(28.dp)),
+                .border(2.dp, Color(0xFFCAC4D0).copy(alpha = 0.6f), RoundedCornerShape(28.dp)),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
             shape = RoundedCornerShape(28.dp)
         ) {
@@ -2623,80 +2623,196 @@ fun MicDashboard(modifier: Modifier = Modifier) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                Text(
-                    text = "Sync light halo",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1D1B20)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "VIVO iQOO MONSTER HALO PREVIEW",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 1.2.sp
+                        )
                     )
-                )
+                    Text(
+                        text = "Real-time LED ring emulator",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = Color(0xFF49454F)
+                        )
+                    )
+                }
 
-                // Visualizer light container
+                // Interactive Simulated Vivo Smartphone Back
                 Box(
-                    modifier = Modifier.size(220.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xFF0C0A0E)),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isRecording) {
-                        // Ambient bloom background glow matching sensitivity/amplitude
-                        Box(
-                            modifier = Modifier
-                                .size(140.dp)
-                                .graphicsLayer {
-                                    scaleX = animatedScale
-                                    scaleY = animatedScale
-                                    rotationZ = finalRotation
-                                }
-                                .shadow(
-                                    elevation = (32.dp * brightness * (1.0f + amplitude)),
-                                    shape = RoundedCornerShape(100.dp),
-                                    ambientColor = auraColors[0],
-                                    spotColor = auraColors[1],
-                                    clip = false
-                                )
-                                .background(
-                                    brush = Brush.sweepGradient(colors = auraColors),
-                                    shape = RoundedCornerShape(100.dp)
-                                )
+                    // Futuristic gaming circuit grid layout overlays
+                    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                        val activeColor = if (isRecording) auraColors.first() else Color(0xFF2C2735)
+                        
+                        // Cyber vertical strip guidelines
+                        drawLine(
+                            color = activeColor.copy(alpha = 0.12f),
+                            start = Offset(size.width * 0.5f, 0f),
+                            end = Offset(size.width * 0.5f, size.height),
+                            strokeWidth = 2.dp.toPx()
+                        )
+                        
+                        // Cyber accents corner lines
+                        drawCircle(
+                            color = activeColor.copy(alpha = 0.08f),
+                            center = Offset(size.width * 0.5f, size.height * 0.35f),
+                            radius = size.width * 0.45f
                         )
                     }
 
-                    // Foreground sphere frame
+                    // Luxury Glass Smartphone Chassis Mock
                     Box(
                         modifier = Modifier
-                            .size(150.dp)
-                            .shadow(2.dp, RoundedCornerShape(100.dp))
-                            .clip(RoundedCornerShape(100.dp))
-                            .background(Color(0xFFF3EDF7)),
-                        contentAlignment = Alignment.Center
+                            .width(165.dp)
+                            .height(265.dp)
+                            .border(1.5.dp, Color(0xFF2D2A35), RoundedCornerShape(24.dp))
+                            .shadow(24.dp, RoundedCornerShape(24.dp), ambientColor = Color.Black)
+                            .background(Color(0xFF15131A), RoundedCornerShape(24.dp)),
+                        contentAlignment = Alignment.TopCenter
                     ) {
-                        // Micro icon / emoji representation
-                        Text(
-                            text = if (isRecording) "🎙" else "💤",
-                            fontSize = 62.sp
-                        )
-                    }
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Top
+                        ) {
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                    // Rotating Neon Border ring
-                    Box(
-                        modifier = Modifier
-                            .size(170.dp)
-                            .then(
+                            // Monster Halo Ring (Circular Camera Ring module)
+                            Box(
+                                modifier = Modifier.size(96.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 if (isRecording) {
-                                    Modifier.graphicsLayer { rotationZ = finalRotation }
-                                } else {
-                                    Modifier
+                                    // High-fidelity halo glow bloom radiating outward
+                                    Box(
+                                        modifier = Modifier
+                                            .size(82.dp)
+                                            .graphicsLayer {
+                                                scaleX = animatedScale
+                                                scaleY = animatedScale
+                                                rotationZ = finalRotation
+                                            }
+                                            .shadow(
+                                                elevation = (38.dp * brightness * (1.2f + amplitude)),
+                                                shape = CircleShape,
+                                                ambientColor = auraColors.first(),
+                                                spotColor = auraColors.last(),
+                                                clip = false
+                                            )
+                                            .background(
+                                                brush = Brush.sweepGradient(colors = auraColors),
+                                                shape = CircleShape
+                                            )
+                                    )
                                 }
+
+                                // Dark outer glass lens frame
+                                Box(
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .background(Color(0xFF09080B), CircleShape)
+                                        .border(
+                                            width = if (isRecording) 3.5.dp else 1.5.dp,
+                                            brush = if (isRecording) {
+                                                Brush.sweepGradient(colors = auraColors)
+                                            } else {
+                                                androidx.compose.ui.graphics.SolidColor(Color(0xFF322E3A))
+                                            },
+                                            shape = CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    // Dual Premium camera lenses
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .background(Color(0xFF16151A), CircleShape)
+                                                .border(0.5.dp, Color(0xFF44404E), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .background(Color(0xFF0D0C0F), CircleShape)
+                                                    .border(0.5.dp, if (isRecording) auraColors.first() else Color.DarkGray, CircleShape)
+                                            )
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .background(Color(0xFF16151A), CircleShape)
+                                                .border(0.5.dp, Color(0xFF44404E), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(5.dp)
+                                                    .background(Color(0xFF0D0C0F), CircleShape)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            // Glowing badge hardware telemetry
+                            Text(
+                                text = if (isRecording) "MONSTER HALO SYNC" else "STANDBY ACTIVE",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 7.5.sp,
+                                    letterSpacing = 1.2.sp,
+                                    color = if (isRecording) auraColors.first() else Color(0x66FFFFFF)
+                                )
                             )
-                            .border(
-                                width = if (isRecording) 3.dp else 1.5.dp,
-                                brush = if (isRecording) {
-                                    Brush.sweepGradient(colors = auraColors)
-                                } else {
-                                    androidx.compose.ui.graphics.SolidColor(Color(0xFFCAC4D0))
-                                },
-                                shape = RoundedCornerShape(100.dp)
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = if (isRecording) "LEVEL: ${(amplitude * 100).toInt()}%" else "STANDBY",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isRecording) auraColors.last().copy(alpha = 0.85f) else Color(0xFF8B8599),
+                                    fontFamily = FontFamily.Monospace
+                                )
                             )
-                    )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Cyber pattern striping details
+                            Box(
+                                modifier = Modifier
+                                    .width(60.dp)
+                                    .height(1.5.dp)
+                                    .background(
+                                        if (isRecording) {
+                                            Brush.horizontalGradient(colors = auraColors)
+                                        } else {
+                                            androidx.compose.ui.graphics.SolidColor(Color(0xFF282531))
+                                        }
+                                    )
+                            )
+                        }
+                    }
                 }
 
                 // Error Banner Display
@@ -2710,45 +2826,79 @@ fun MicDashboard(modifier: Modifier = Modifier) {
                     )
                 }
 
-                // Start / Pause Controls Cockpit (Play / Pause Buttons)
+                // Premium tactile Start and Pause option controls cockpit (Explicit buttons)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    IconButton(
-                        onClick = { isRecording = !isRecording },
-                        enabled = hasMicPermission,
+                    // Start Sync Option Button
+                    Button(
+                        onClick = { isRecording = true },
+                        enabled = hasMicPermission && !isRecording,
                         modifier = Modifier
-                            .size(64.dp)
-                            .shadow(4.dp, RoundedCornerShape(20.dp))
-                            .background(
-                                if (isRecording) Color(0xFFBA1A1A) else Color(0xFF6750A4),
-                                shape = RoundedCornerShape(20.dp)
-                            )
+                            .weight(1f)
+                            .height(50.dp)
+                            .shadow(2.dp, RoundedCornerShape(14.dp)),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        if (isRecording) {
-                            androidx.compose.foundation.Canvas(modifier = Modifier.size(24.dp)) {
-                                val barWidth = 6.dp.toPx()
-                                val barHeight = 16.dp.toPx()
-                                val gap = 5.dp.toPx()
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Start",
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "START",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+
+                    // Pause Sync Option Button
+                    Button(
+                        onClick = { isRecording = false },
+                        enabled = hasMicPermission && isRecording,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp)
+                            .shadow(2.dp, RoundedCornerShape(14.dp)),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Custom painted pause icon (two lines)
+                            androidx.compose.foundation.Canvas(modifier = Modifier.size(14.dp)) {
+                                val barWidth = 4.dp.toPx()
+                                val barHeight = 12.dp.toPx()
+                                val gap = 3.dp.toPx()
+                                val brushCol = if (isRecording) Color.White else Color.Gray
                                 drawRect(
-                                    color = Color.White,
+                                    color = brushCol,
                                     topLeft = Offset(size.width / 2f - barWidth - gap / 2f, size.height / 2f - barHeight / 2f),
                                     size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
                                 )
                                 drawRect(
-                                    color = Color.White,
+                                    color = brushCol,
                                     topLeft = Offset(size.width / 2f + gap / 2f, size.height / 2f - barHeight / 2f),
                                     size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
                                 )
                             }
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Start recording",
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp)
+                            Text(
+                                text = "PAUSE",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                             )
                         }
                     }
@@ -2756,9 +2906,9 @@ fun MicDashboard(modifier: Modifier = Modifier) {
 
                 // Status descriptive Label
                 Text(
-                    text = if (isRecording) "🔴 LISTENING SYSTEM SOUNDS" else "⚪ INACTIVE",
+                    text = if (isRecording) "🔴 MONSTER LIGHT INTEGRATION ACTIVE" else "⚪ LIGHT SYNC PAUSED / STANDBY",
                     color = if (isRecording) Color(0xFFBA1A1A) else Color(0xFF49454F),
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
