@@ -143,6 +143,12 @@ fun RavanaLightDashboard(
     val prefs = remember { PreferencesManager(context) }
     var isListenerToggleEnabled by remember { mutableStateOf(prefs.isListenerEnabled) }
 
+    var isRhythmSyncEnabled by remember { mutableStateOf(prefs.isRhythmSyncEnabled) }
+    var rhythmSyncStyle by remember { mutableStateOf(prefs.rhythmSyncStyle) }
+    var rhythmColorMode by remember { mutableStateOf(prefs.rhythmColorMode) }
+    var rhythmSensitivity by remember { mutableStateOf(prefs.rhythmSensitivity) }
+    var rhythmBrightness by remember { mutableStateOf(prefs.rhythmBrightness) }
+
     LaunchedEffect(Unit) {
         if (prefs.isListenerEnabled) {
             setServiceEnabledState(context, true)
@@ -226,13 +232,531 @@ fun RavanaLightDashboard(
         PlaybackCockpit(
             mediaInfo = mediaInfo,
             isActive = activePlaying,
+            isRhythmEnabled = isRhythmSyncEnabled,
+            rhythmStyle = rhythmSyncStyle,
+            colorMode = rhythmColorMode,
+            rhythmSensitivity = rhythmSensitivity,
+            rhythmBrightness = rhythmBrightness,
             onPrevClick = { MediaListenerService.skipToPreviousActiveSession() },
             onPlayPauseClick = { MediaListenerService.playPauseActiveSession() },
             onNextClick = { MediaListenerService.skipToNextActiveSession() }
         )
+
+        // Dedicated Sound Suite Sync (音律神光 / Music Rhythm) Panel
+        SoundSuiteSynchronizationCard(
+            isEnabled = isRhythmSyncEnabled,
+            onEnabledChanged = {
+                isRhythmSyncEnabled = it
+                prefs.isRhythmSyncEnabled = it
+            },
+            syncStyle = rhythmSyncStyle,
+            onStyleChanged = {
+                rhythmSyncStyle = it
+                prefs.rhythmSyncStyle = it
+            },
+            colorMode = rhythmColorMode,
+            onColorModeChanged = {
+                rhythmColorMode = it
+                prefs.rhythmColorMode = it
+            },
+            sensitivity = rhythmSensitivity,
+            onSensitivityChanged = {
+                rhythmSensitivity = it
+                prefs.rhythmSensitivity = it
+            },
+            brightness = rhythmBrightness,
+            onBrightnessChanged = {
+                rhythmBrightness = it
+                prefs.rhythmBrightness = it
+            },
+            isPlaying = activePlaying && mediaInfo.isPlaying,
+            title = mediaInfo.title,
+            artist = mediaInfo.artist
+        )
         
         // Aesthetic Brand Footer
         BrandFooter()
+    }
+}
+
+fun getSelectedAuraColors(
+    colorMode: String, 
+    title: String, 
+    artist: String
+): List<Color> {
+    return when (colorMode) {
+        "album_art" -> {
+            if (title.isNotEmpty() && title != "No Active Media" && title != "No active media") {
+                val hashValue = (title + artist).hashCode()
+                val h1 = kotlin.math.abs(hashValue % 360).toFloat()
+                val h2 = (h1 + 180f) % 360f
+                listOf(
+                    Color.hsv(h1, 0.85f, 0.95f),
+                    Color.hsv(h2, 0.75f, 0.90f)
+                )
+            } else {
+                listOf(Color(0xFF6750A4), Color(0xFF03DAC6)) // Default Purple & Cyan
+            }
+        }
+        "cyber_neon" -> listOf(Color(0xFF00F0FF), Color(0xFFFF007F)) // Frost Cyan & Electric Pink
+        "space_violet" -> listOf(Color(0xFF6750A4), Color(0xFF3F51B5)) // Indigo Purple & Royal Blue
+        "magma_flame" -> listOf(Color(0xFFFF3D00), Color(0xFFFFC107)) // Flame Red & Amber Orange
+        else -> listOf(Color(0xFF6750A4), Color(0xFF00F0FF))
+    }
+}
+
+@Composable
+fun SoundSuiteSynchronizationCard(
+    isEnabled: Boolean,
+    onEnabledChanged: (Boolean) -> Unit,
+    syncStyle: String,
+    onStyleChanged: (String) -> Unit,
+    colorMode: String,
+    onColorModeChanged: (String) -> Unit,
+    sensitivity: Float,
+    onSensitivityChanged: (Float) -> Unit,
+    brightness: Float,
+    onBrightnessChanged: (Float) -> Unit,
+    isPlaying: Boolean,
+    title: String,
+    artist: String
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(1.dp, RoundedCornerShape(28.dp))
+            .testTag("sound_suite_card"),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFFFFFFF)
+        ),
+        shape = RoundedCornerShape(28.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCAC4D0))
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            // Header with custom light bulb / rhythm graphics
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Sound Suite Sync (音律神光)",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1D1B20)
+                                )
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFEADDFF), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "LIVE",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF21005D),
+                                        fontSize = 9.sp
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Dynamic audio-synchronized light show",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF49454F)
+                    )
+                }
+
+                Switch(
+                    checked = isEnabled,
+                    onCheckedChange = onEnabledChanged,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF6750A4),
+                        uncheckedThumbColor = Color(0xFF49454F),
+                        uncheckedTrackColor = Color(0xFFF3EDF7)
+                    )
+                )
+            }
+
+            if (isEnabled) {
+                // Interactive Simulated physical device mockup displays Monster Halo/Dynamic Light
+                Text(
+                    text = "AURA PREVIEW (酷玩光效)",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF49454F)
+                    )
+                )
+
+                val auraColors = getSelectedAuraColors(colorMode, title, artist)
+                val transition = rememberInfiniteTransition(label = "preview_neon")
+                
+                val ringRotation by if (isPlaying) {
+                    transition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                durationMillis = (3200 / sensitivity).toInt().coerceAtLeast(800),
+                                easing = LinearEasing
+                            )
+                        ),
+                        label = "preview_rotation"
+                    )
+                } else {
+                    remember { mutableStateOf(0f) }
+                }
+
+                val previewScale by if (isPlaying && syncStyle == "pulse") {
+                    transition.animateFloat(
+                        initialValue = 0.94f,
+                        targetValue = 1.08f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                durationMillis = (500 / sensitivity).toInt().coerceAtLeast(150),
+                                easing = FastOutSlowInEasing
+                            ),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "preview_scale"
+                    )
+                } else {
+                    remember { mutableStateOf(1.0f) }
+                }
+
+                val previewAlpha by if (isPlaying && syncStyle == "neon_glow") {
+                    transition.animateFloat(
+                        initialValue = 0.4f,
+                        targetValue = 1.0f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                durationMillis = (800 / sensitivity).toInt().coerceAtLeast(200),
+                                easing = LinearEasing
+                            ),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "preview_alpha"
+                    )
+                } else {
+                    remember { mutableStateOf(0.9f) }
+                }
+
+                // Phone Backplate Mockup Component
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xFF111012)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Mobile outline frame representation
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(135.dp)
+                            .border(1.5.dp, Color(0xFF49454F), RoundedCornerShape(24.dp))
+                            .background(Color(0xFF222025), RoundedCornerShape(24.dp)),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(top = 18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            // Circular Lens Matrix with Neon Halo!
+                            Box(
+                                modifier = Modifier
+                                    .size(68.dp)
+                                    .background(Color(0xFF131214), CircleShape)
+                                    .border(1.dp, Color(0xFF49454F), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isPlaying) {
+                                    // Simulated Ambient Ray Glow
+                                    val brushValue = if (syncStyle == "aurora_wave") {
+                                        Brush.sweepGradient(
+                                            colors = auraColors,
+                                            center = Offset.Unspecified
+                                        )
+                                    } else {
+                                        Brush.linearGradient(
+                                            colors = auraColors
+                                        )
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(54.dp * previewScale)
+                                            .shadow(
+                                                elevation = (20.dp * brightness),
+                                                shape = CircleShape,
+                                                clip = false,
+                                                ambientColor = auraColors.first(),
+                                                spotColor = auraColors.last()
+                                            )
+                                            .border(
+                                                width = if (syncStyle == "aurora_wave") 5.dp else 3.dp,
+                                                brush = brushValue,
+                                                shape = CircleShape
+                                            )
+                                    )
+                                } else {
+                                    // Saturated low-key inactive outline representation
+                                    Box(
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .border(1.5.dp, Color(0xFF49454F), CircleShape)
+                                    )
+                                }
+
+                                // Dark reflective camera glass
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(Color(0xFF1D1B20), CircleShape)
+                                        .border(0.5.dp, Color(0xFF49454F), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .background(Color(0xFF09090A), CircleShape)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Text(
+                                text = if (isPlaying) "MONSTER HALO SYNC" else "STANDBY ACTIVE",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 7.5.sp,
+                                    letterSpacing = 1.sp,
+                                    color = if (isPlaying) auraColors.first().copy(alpha = previewAlpha) else Color(0x88FFFFFF)
+                                )
+                            )
+
+                            if (isPlaying) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    repeat(3) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(3.dp)
+                                                .background(auraColors.last().copy(alpha = previewAlpha), CircleShape)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = Color(0xFFCAC4D0).copy(alpha = 0.5f))
+
+                // Rhythm Synchronization style triggers
+                Text(
+                    text = "SYNC STYLE (酷玩灯效模式)",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF49454F)
+                    )
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        "neon_glow" to "律动呼吸",
+                        "aurora_wave" to "极光频谱",
+                        "pulse" to "幽光瞬闪"
+                    ).forEach { styleOpt ->
+                        val isSelected = syncStyle == styleOpt.first
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .background(
+                                    if (isSelected) Color(0xFFEADDFF) else Color(0xFFF3EDF7),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) Color(0xFF6750A4) else Color.Transparent,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .clickable { onStyleChanged(styleOpt.first) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = styleOpt.second,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color(0xFF21005D) else Color(0xFF49454F)
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Custom aura visualizers color options
+                Text(
+                    text = "AURA COLORS (炫彩神光方案)",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF49454F)
+                    )
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        "album_art" to "流光自适应",
+                        "cyber_neon" to "冰晶圣歌",
+                        "space_violet" to "紫夜幽兰",
+                        "magma_flame" to "熔岩魔火"
+                    ).forEach { colorOpt ->
+                        val isSelected = colorMode == colorOpt.first
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .background(
+                                    if (isSelected) Color(0xFFEADDFF) else Color(0xFFF3EDF7),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) Color(0xFF6750A4) else Color.Transparent,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .clickable { onColorModeChanged(colorOpt.first) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = colorOpt.second,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color(0xFF21005D) else Color(0xFF49454F)
+                                )
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = Color(0xFFCAC4D0).copy(alpha = 0.5f))
+
+                // Rhythm Reaction Sensitivity
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Frequency Reaction Sensitivity (响应灵敏度)",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF49454F)
+                            )
+                        )
+                        Text(
+                            text = "${(sensitivity * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF6750A4)
+                            )
+                        )
+                    }
+                    Slider(
+                        value = sensitivity,
+                        onValueChange = onSensitivityChanged,
+                        valueRange = 0.5f..2.5f,
+                        colors = SliderDefaults.colors(
+                            activeTrackColor = Color(0xFF6750A4),
+                            inactiveTrackColor = Color(0xFFEADDFF),
+                            thumbColor = Color(0xFF6750A4)
+                        )
+                    )
+                }
+
+                // Rhythm Brightness Intensity
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Ambient Glow Brightness (神光亮度)",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF49454F)
+                            )
+                        )
+                        Text(
+                            text = "${(brightness * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF6750A4)
+                            )
+                        )
+                    }
+                    Slider(
+                        value = brightness,
+                        onValueChange = onBrightnessChanged,
+                        valueRange = 0.1f..1.0f,
+                        colors = SliderDefaults.colors(
+                            activeTrackColor = Color(0xFF6750A4),
+                            inactiveTrackColor = Color(0xFFEADDFF),
+                            thumbColor = Color(0xFF6750A4)
+                        )
+                    )
+                }
+
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF3EDF7), RoundedCornerShape(16.dp))
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Sound Suite Sync is disabled. Enable to activate real-time LED and screen-edge halo visualizations under music beat.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF49454F),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -545,6 +1069,11 @@ fun MasterToggleCard(
 fun PlaybackCockpit(
     mediaInfo: MediaStateManager.MediaInfo,
     isActive: Boolean,
+    isRhythmEnabled: Boolean,
+    rhythmStyle: String,
+    colorMode: String,
+    rhythmSensitivity: Float,
+    rhythmBrightness: Float,
     onPrevClick: () -> Unit,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit
@@ -591,44 +1120,114 @@ fun PlaybackCockpit(
                     )
                 }
 
-                // Artwork Frame (24dp rounded matching HTML style)
+                // Artwork Frame with dynamic halo sync
+                val auraColors = getSelectedAuraColors(colorMode, mediaInfo.title, mediaInfo.artist)
+                val transition = rememberInfiniteTransition(label = "cockpit_aura")
+                
+                val rotationAngle by if (isRhythmEnabled && mediaInfo.isPlaying) {
+                    transition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                durationMillis = (4000 / rhythmSensitivity).toInt().coerceAtLeast(800),
+                                easing = LinearEasing
+                            )
+                        ),
+                        label = "aura_rotation"
+                    )
+                } else {
+                    remember { mutableStateOf(0f) }
+                }
+
+                val pulseScale by if (isRhythmEnabled && mediaInfo.isPlaying) {
+                    transition.animateFloat(
+                        initialValue = 0.95f,
+                        targetValue = 1.08f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                durationMillis = (600 / rhythmSensitivity).toInt().coerceAtLeast(150),
+                                easing = FastOutSlowInEasing
+                            ),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "aura_pulse"
+                    )
+                } else {
+                    remember { mutableStateOf(1.0f) }
+                }
+
                 Box(
-                    modifier = Modifier
-                        .size(180.dp)
-                        .shadow(2.dp, RoundedCornerShape(24.dp))
-                        .border(1.dp, Color(0xFFCAC4D0), RoundedCornerShape(24.dp))
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(Color(0xFFF3EDF7)),
+                    modifier = Modifier.size(200.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (mediaInfo.albumArt != null) {
-                        Image(
-                            bitmap = mediaInfo.albumArt.asImageBitmap(),
-                            contentDescription = "Album Art",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
+                    if (isRhythmEnabled && mediaInfo.isPlaying) {
+                        // Ambient bloom background glow
                         Box(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(
-                                            Color(0xFF6750A4).copy(alpha = 0.1f),
-                                            Color(0xFF6750A4).copy(alpha = 0.3f)
-                                        )
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "♫",
-                                style = androidx.compose.ui.text.TextStyle(
-                                    fontSize = 72.sp,
-                                    color = Color(0xFF6750A4)
+                                .size(160.dp * pulseScale)
+                                .shadow(
+                                    elevation = (24.dp * rhythmBrightness),
+                                    shape = RoundedCornerShape(24.dp),
+                                    clip = false,
+                                    ambientColor = auraColors.first(),
+                                    spotColor = auraColors.last()
                                 )
+                                .background(
+                                    Brush.sweepGradient(
+                                        colors = auraColors
+                                    ),
+                                    shape = RoundedCornerShape(24.dp)
+                                )
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(180.dp)
+                            .shadow(2.dp, RoundedCornerShape(24.dp))
+                            .border(
+                                width = if (isRhythmEnabled && mediaInfo.isPlaying) 2.dp else 1.dp,
+                                brush = if (isRhythmEnabled && mediaInfo.isPlaying) {
+                                    Brush.sweepGradient(colors = auraColors)
+                                } else {
+                                    androidx.compose.ui.graphics.SolidColor(Color(0xFFCAC4D0))
+                                },
+                                shape = RoundedCornerShape(24.dp)
                             )
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color(0xFFF3EDF7)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (mediaInfo.albumArt != null) {
+                            Image(
+                                bitmap = mediaInfo.albumArt.asImageBitmap(),
+                                contentDescription = "Album Art",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(
+                                                Color(0xFF6750A4).copy(alpha = 0.1f),
+                                                Color(0xFF6750A4).copy(alpha = 0.3f)
+                                            )
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "♫",
+                                    style = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 72.sp,
+                                        color = Color(0xFF6750A4)
+                                    )
+                                )
+                            }
                         }
                     }
                 }
